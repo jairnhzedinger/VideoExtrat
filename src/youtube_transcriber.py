@@ -1,8 +1,8 @@
 """Utility to download YouTube videos and transcribe them using Whisper."""
 
 from pathlib import Path
+from urllib.error import HTTPError
 from pytube import YouTube
-import whisper
 
 
 def download_video(url: str, output_dir: str = "downloads") -> Path:
@@ -20,12 +20,23 @@ def download_video(url: str, output_dir: str = "downloads") -> Path:
     Path
         Path to the downloaded video file.
     """
-    yt = YouTube(url)
-    stream = yt.streams.filter(only_audio=True).first()
+    try:
+        yt = YouTube(url)
+        stream = yt.streams.filter(only_audio=True).first()
+    except Exception as exc:
+        raise RuntimeError(f"Failed to fetch video info: {exc}") from exc
+
+    if stream is None:
+        raise RuntimeError("No audio streams available for this video.")
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     file_name = f"{yt.title.replace(' ', '_')}.mp4"
-    stream.download(output_path=str(output_path), filename=file_name)
+    try:
+        stream.download(output_path=str(output_path), filename=file_name)
+    except HTTPError as exc:
+        raise RuntimeError(f"Failed to download video: {exc}") from exc
+    except Exception as exc:  # catch other download errors
+        raise RuntimeError(f"Failed to download video: {exc}") from exc
     return output_path / file_name
 
 
@@ -44,6 +55,7 @@ def transcribe_video(video_path: Path, model_size: str = "base") -> str:
     str
         The transcribed text.
     """
+    import whisper
     model = whisper.load_model(model_size)
     result = model.transcribe(str(video_path))
     return result.get("text", "")
